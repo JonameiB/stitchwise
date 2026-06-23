@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ground: #FFF6F4;
+  --color-ground-2: #FBE9E6;
+  --color-card: #FFFFFF;
+  --color-ink: #3A2233;
+  --color-ink-soft: #7A6470;
+  --color-line: #F0D9D6;
+  --color-berry: #E8527E;
+  --color-berry-ink: #B83563;
+  --color-sage: #5FA98E;
+  --color-sage-ink: #3F8771;
+
+  --font-display: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", Quicksand, system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, var(--color-ground-2), transparent 60%),
+    var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The distinctive look lives in these reusable classes. */
+@layer components {
+  .card {
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: 20px;
+    box-shadow: 0 18px 40px -32px rgba(184, 53, 99, 0.45);
+  }
+  .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+  }
+  .field {
+    width: 100%;
+    background: var(--color-ground);
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font: inherit;
+    color: var(--color-ink);
+  }
+  .field:focus {
+    outline: 2px solid var(--color-berry);
+    outline-offset: 1px;
+    border-color: transparent;
+  }
+  textarea.field { resize: vertical; min-height: 130px; line-height: 1.5; }
+
+  .btn {
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 11px 20px;
+    transition: transform 0.08s ease, filter 0.15s ease;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--color-berry); color: #fff; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.05); }
+  .btn-ghost { background: var(--color-ground-2); color: var(--color-berry-ink); }
+  .btn-danger { background: transparent; color: var(--color-ink-soft); padding: 6px 10px; font-size: 13px; }
+  .btn-danger:hover { color: var(--color-berry-ink); }
+
+  .tab {
+    background: transparent;
+    color: var(--color-ink-soft);
+    border: none;
+    border-radius: 999px;
+    padding: 9px 18px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tab[aria-selected="true"] {
+    background: var(--color-card);
+    color: var(--color-berry-ink);
+    box-shadow: 0 6px 16px -10px rgba(184, 53, 99, 0.5);
+  }
+
+  .chip {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--color-berry-ink);
+    background: var(--color-ground-2);
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+}
+
+.yarn-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, var(--color-berry) 55%, var(--color-berry-ink) 100%);
+  box-shadow: inset 0 -5px 12px -5px rgba(0, 0, 0, 0.3);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .yarn-spinner { animation: none; } }
