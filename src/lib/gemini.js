@@ -140,7 +140,150 @@ function fileToBase64(file) {
   })
 }
 
-export async function suggestProjects(yarns) {
+export async function generatePatternFromImage(imageFile, yarn, hooks = []) {
+  const w = weightById(yarn.weight)
+  const gauge = yarn.gaugePer10cm
+    ? `${yarn.gaugePer10cm} sts per 10cm (user-measured)`
+    : `approx. ${w ? w.scGaugePer10cm : '?'} sc per 10cm (estimated from weight)`
+
+  const hookLines = hooks.length
+    ? hooks.map((h) => `- ${h.sizeMm} mm ${h.type === 'knit' ? 'knitting needle' : 'crochet hook'}${h.note ? ` (${h.note})` : ''}`).join('\n')
+    : '- No hooks/needles recorded (suggest a suitable size)'
+
+  const prompt = `You are Stitchwise, a friendly crochet and knitting pattern writer. The maker has uploaded a photo of something they want to make. Look at the image carefully, identify the item, and write a complete beginner-friendly pattern to recreate it using the yarn and tools listed.
+
+MAKER'S YARN: ${yarn.name} — ${w ? w.label : yarn.weight}${yarn.fiber ? `, ${yarn.fiber}` : ''}${yarn.color ? `, ${yarn.color}` : ''}
+GAUGE: ${gauge}
+MAKER'S HOOKS & NEEDLES:
+${hookLines}
+
+Write a full pattern to recreate what you see in the photo. Use the best hook/needle from their tools.
+
+Reply with ONLY a JSON object (no markdown, no code fences):
+{
+  "title": "what the item is + pattern title",
+  "difficulty": "Beginner | Easy | Intermediate",
+  "hookSize": "e.g. 4.0 mm crochet hook",
+  "gauge": "e.g. 14 sc = 10 cm",
+  "materialsNeeded": ["yarn name + amount", "hook size", "any other tools"],
+  "abbreviations": ["sc = single crochet", "ch = chain", "..."],
+  "finishedSize": "approx finished dimensions",
+  "instructions": [
+    { "section": "Foundation", "steps": ["Step 1 text", "Step 2 text"] },
+    { "section": "Body", "steps": ["..."] },
+    { "section": "Finishing", "steps": ["..."] }
+  ],
+  "tips": ["beginner tip 1", "tip 2"]
+}
+
+Rules: write real stitch counts and row-by-row instructions. If you can't clearly identify the item from the image, describe what you see and write a pattern for the closest match. Show the maths where counts change.`
+
+  const base64 = await fileToBase64(imageFile)
+  const body = {
+    contents: [{ role: 'user', parts: [
+      { inlineData: { mimeType: imageFile.type, data: base64 } },
+      { text: prompt },
+    ]}],
+    generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+  }
+
+  let res
+  if (IS_PROD) {
+    try {
+      res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    } catch { throw new Error('NETWORK') }
+  } else {
+    if (!API_KEY) throw new Error('NO_KEY')
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+    } catch { throw new Error('NETWORK') }
+  }
+
+  if (!res.ok) {
+    if (res.status === 400 || res.status === 403) throw new Error('BAD_KEY')
+    if (res.status === 429) throw new Error('RATE_LIMIT')
+    throw new Error('API_' + res.status)
+  }
+
+  const data = await res.json()
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? ''
+  const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+  try { return JSON.parse(cleaned) } catch { throw new Error('PARSE') }
+}
+
+export async function generatePattern({ project, yarn, hooks }) {
+  const hookLines = hooks.length
+    ? hooks.map((h) => `- ${h.sizeMm} mm ${h.type === 'knit' ? 'knitting needle' : 'crochet hook'}${h.note ? ` (${h.note})` : ''}`).join('\n')
+    : '- No hooks/needles recorded (suggest a suitable size)'
+
+  const w = weightById(yarn.weight)
+  const gauge = yarn.gaugePer10cm
+    ? `${yarn.gaugePer10cm} sts per 10cm (user-measured — use this)`
+    : `approx. ${w ? w.scGaugePer10cm : '?'} sc per 10cm (estimated from weight)`
+
+  const prompt = `You are Stitchwise, a friendly crochet and knitting pattern writer. Write a complete, beginner-friendly pattern for the project below using ONLY the yarn and tools the maker has.
+
+PROJECT: ${project.name} (${project.type})
+YARN: ${yarn.name} — ${w ? w.label : yarn.weight}${yarn.fiber ? `, ${yarn.fiber}` : ''}${yarn.color ? `, ${yarn.color}` : ''}
+GAUGE: ${gauge}
+MAKER'S TOOLS:
+${hookLines}
+
+Write the full pattern. Use the best hook/needle size from the maker's tools. If none suits the yarn, state the ideal size and the closest they have.
+
+Reply with ONLY a JSON object (no markdown, no code fences):
+{
+  "title": "pattern title",
+  "difficulty": "Beginner | Easy | Intermediate",
+  "hookSize": "e.g. 4.0 mm crochet hook",
+  "gauge": "e.g. 14 sc = 10 cm",
+  "materialsNeeded": ["yarn name + amount", "hook size", "any other tools"],
+  "abbreviations": ["sc = single crochet", "ch = chain", "..."],
+  "finishedSize": "approx finished dimensions",
+  "instructions": [
+    { "section": "Foundation", "steps": ["Step 1 text", "Step 2 text"] },
+    { "section": "Body", "steps": ["..."] },
+    { "section": "Finishing", "steps": ["..."] }
+  ],
+  "tips": ["beginner tip 1", "tip 2"]
+}
+
+Rules: write real stitch counts and row-by-row instructions. Keep it achievable for a beginner. Show the maths where counts change.`
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+  }
+
+  let res
+  if (IS_PROD) {
+    try {
+      res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    } catch { throw new Error('NETWORK') }
+  } else {
+    if (!API_KEY) throw new Error('NO_KEY')
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+    } catch { throw new Error('NETWORK') }
+  }
+
+  if (!res.ok) {
+    if (res.status === 400 || res.status === 403) throw new Error('BAD_KEY')
+    if (res.status === 429) throw new Error('RATE_LIMIT')
+    throw new Error('API_' + res.status)
+  }
+
+  const data = await res.json()
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? ''
+  const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+  try { return JSON.parse(cleaned) } catch { throw new Error('PARSE') }
+}
+
+export async function suggestProjects(yarns, hooks = []) {
   const stashLines = yarns.map((y) => {
     const w = weightById(y.weight)
     const totalM = y.balls && y.lengthM ? Number(y.balls) * Number(y.lengthM) : null
@@ -156,12 +299,19 @@ export async function suggestProjects(yarns) {
     ].filter(Boolean).join(', ')
   }).join('\n')
 
-  const prompt = `You are Stitchwise, a helpful crochet and knitting assistant. A maker wants to know what projects they can make with the yarn they already own. Be warm, practical, and specific.
+  const hookLines = hooks.length
+    ? hooks.map((h) => `- ${h.sizeMm} mm ${h.type === 'knit' ? 'knitting needle' : 'crochet hook'}${h.note ? ` (${h.note})` : ''}`).join('\n')
+    : '- none recorded'
 
-THE USER'S STASH:
+  const prompt = `You are Stitchwise, a helpful crochet and knitting assistant. A maker wants to know what projects they can make with the yarn and tools they already own. Be warm, practical, and specific.
+
+THE USER'S YARN STASH:
 ${stashLines}
 
-Suggest 4 projects that match what they have. For each project, pick the best yarn(s) from the stash. Prioritise beginner-friendly makes, then intermediate. Include at least one small quick win (like a coaster, scrunchie, or amigurumi) if the yarn supports it.
+THE USER'S HOOKS & NEEDLES:
+${hookLines}
+
+Suggest 4 projects that match what they have. For each project, pick the best yarn(s) from the stash and confirm it suits a hook/needle they own. Prioritise beginner-friendly makes, then intermediate. Include at least one small quick win (like a coaster, scrunchie, or amigurumi) if the yarn supports it.
 
 Reply with ONLY a JSON array (no markdown, no code fences) in EXACTLY this shape:
 [
@@ -169,10 +319,10 @@ Reply with ONLY a JSON array (no markdown, no code fences) in EXACTLY this shape
     "name": "project name",
     "type": "e.g. amigurumi · beginner",
     "yarn": "which stash yarn(s) to use",
+    "hookSize": "which hook/needle from their stash to use, e.g. '4.0 mm crochet hook'",
     "whyItWorks": "one sentence — why this yarn suits this project",
     "approxTime": "e.g. 2–3 hours, a weekend",
-    "ballsNeeded": "e.g. 1 ball, 2–3 balls",
-    "searchTip": "a short search phrase the user can Google or YouTube to find a free pattern, e.g. 'free beginner crochet flower pattern worsted'"
+    "ballsNeeded": "e.g. 1 ball, 2–3 balls"
   }
 ]
 

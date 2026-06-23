@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react'
-import { analyzePattern, errorMessage, hasApiKey } from '../lib/gemini.js'
+import { useLocalStorage } from '../lib/useLocalStorage.js'
+import { analyzePattern, generatePatternFromImage, errorMessage, hasApiKey } from '../lib/gemini.js'
 
 export default function Converter({ yarns, onGoToStash }) {
+  const [hooks] = useLocalStorage('stitchwise.hooks', [])
   const [patternText, setPatternText] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -11,11 +13,15 @@ export default function Converter({ yarns, onGoToStash }) {
   const [targetCm, setTargetCm] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [generatedPattern, setGeneratedPattern] = useState(null)
   const [error, setError] = useState('')
   const fileInputRef = useRef(null)
 
   const selectedYarn = yarns.find((y) => y.id === yarnId) ?? yarns[0]
-  const hasInput = patternText.trim().length > 10 || imageFile != null
+  const hasText = patternText.trim().length > 10
+  const hasInput = hasText || imageFile != null
+  // Image-only mode: photo uploaded but no text pasted → offer pattern generation
+  const imageOnlyMode = imageFile != null && !hasText
   const canConvert = hasInput && selectedYarn && (mode === 'size' || Number(targetCm) > 0)
 
   function applyFile(file) {
@@ -41,12 +47,28 @@ export default function Converter({ yarns, onGoToStash }) {
     setLoading(true)
     setError('')
     setResult(null)
+    setGeneratedPattern(null)
     try {
       const r = await analyzePattern(
         { patternText: patternText.trim(), yarn: selectedYarn, mode, targetCm: Number(targetCm) },
         imageFile,
       )
       setResult(r)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onGenerateFromPhoto() {
+    setLoading(true)
+    setError('')
+    setResult(null)
+    setGeneratedPattern(null)
+    try {
+      const r = await generatePatternFromImage(imageFile, selectedYarn, hooks)
+      setGeneratedPattern(r)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -193,10 +215,21 @@ export default function Converter({ yarns, onGoToStash }) {
             </label>
           )}
 
-          <div className="flex items-center gap-3">
-            <button className="btn btn-primary" onClick={onConvert} disabled={!canConvert || loading}>
-              {loading ? 'Working…' : 'Convert for my yarn'}
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {imageOnlyMode ? (
+              <button className="btn btn-primary" onClick={onGenerateFromPhoto} disabled={!selectedYarn || loading}>
+                {loading ? 'Working…' : 'Generate pattern from photo'}
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={onConvert} disabled={!canConvert || loading}>
+                {loading ? 'Working…' : 'Convert for my yarn'}
+              </button>
+            )}
+            {imageFile && !imageOnlyMode && (
+              <button className="btn" onClick={onGenerateFromPhoto} disabled={!selectedYarn || loading}>
+                Generate pattern from photo
+              </button>
+            )}
             {loading && <div className="yarn-spinner" aria-hidden="true" />}
           </div>
         </div>
@@ -207,6 +240,8 @@ export default function Converter({ yarns, onGoToStash }) {
       )}
 
       {result && <ResultCard result={result} mode={mode} />}
+
+      {generatedPattern && <PatternDisplay pattern={generatedPattern} />}
     </div>
   )
 }
@@ -304,6 +339,78 @@ function ResultCard({ result, mode }) {
             {result.warnings.map((w, i) => (
               <li key={i}>• {w}</li>
             ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PatternDisplay({ pattern: p }) {
+  return (
+    <div className="card flex flex-col gap-4 p-5">
+      <div>
+        <div className="font-display text-xl font-bold">{p.title}</div>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {p.difficulty && <span className="chip">{p.difficulty}</span>}
+          {p.hookSize && <span className="chip">{p.hookSize}</span>}
+          {p.finishedSize && <span className="text-xs text-ink-soft">{p.finishedSize}</span>}
+        </div>
+      </div>
+
+      {p.gauge && (
+        <div className="rounded-xl bg-ground-2 px-4 py-3 text-sm">
+          <span className="label">Gauge: </span>{p.gauge}
+        </div>
+      )}
+
+      {Array.isArray(p.materialsNeeded) && p.materialsNeeded.length > 0 && (
+        <div>
+          <div className="label mb-1.5">Materials</div>
+          <ul className="flex flex-col gap-1 text-sm">
+            {p.materialsNeeded.map((m, i) => (
+              <li key={i} className="flex gap-2"><span className="text-berry">·</span><span>{m}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {Array.isArray(p.abbreviations) && p.abbreviations.length > 0 && (
+        <div>
+          <div className="label mb-1.5">Abbreviations</div>
+          <div className="flex flex-wrap gap-2">
+            {p.abbreviations.map((a, i) => (
+              <span key={i} className="rounded-lg bg-ground-2 px-2 py-1 font-mono text-[12px]">{a}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Array.isArray(p.instructions) && p.instructions.length > 0 && (
+        <div className="flex flex-col gap-4">
+          {p.instructions.map((section, si) => (
+            <div key={si}>
+              <div className="label mb-2">{section.section}</div>
+              <ol className="flex flex-col gap-2">
+                {section.steps.map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm">
+                    <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-berry text-[11px] font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {Array.isArray(p.tips) && p.tips.length > 0 && (
+        <div className="rounded-xl border border-line border-l-4 border-l-sage bg-card p-4">
+          <div className="label mb-1.5" style={{ color: 'var(--color-sage-ink)' }}>Tips</div>
+          <ul className="flex flex-col gap-1.5 text-sm text-ink-soft">
+            {p.tips.map((t, i) => <li key={i}>• {t}</li>)}
           </ul>
         </div>
       )}
