@@ -10,6 +10,7 @@ const blankYarn = {
   weight: '4',
   fiber: '',
   color: '',
+  balls: '',
   lengthM: '',
   weightG: '',
   gaugePer10cm: '',
@@ -18,16 +19,33 @@ const blankYarn = {
 export default function Stash({ yarns, setYarns }) {
   const [hooks, setHooks] = useLocalStorage('stitchwise.hooks', [])
   const [draft, setDraft] = useState(blankYarn)
+  const [editingId, setEditingId] = useState(null)
   const [hook, setHook] = useState({ sizeMm: '', type: 'crochet', note: '' })
 
   const setField = (k, v) => setDraft((d) => ({ ...d, [k]: v }))
 
-  const addYarn = (e) => {
-    e.preventDefault()
-    if (!draft.name.trim()) return
-    setYarns([{ id: newId(), ...draft, name: draft.name.trim() }, ...yarns])
+  function startEdit(yarn) {
+    setEditingId(yarn.id)
+    setDraft({ ...blankYarn, ...yarn })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
     setDraft(blankYarn)
   }
+
+  const saveYarn = (e) => {
+    e.preventDefault()
+    if (!draft.name.trim()) return
+    if (editingId) {
+      setYarns(yarns.map((y) => (y.id === editingId ? { ...y, ...draft, name: draft.name.trim() } : y)))
+      setEditingId(null)
+    } else {
+      setYarns([{ id: newId(), ...draft, name: draft.name.trim() }, ...yarns])
+    }
+    setDraft(blankYarn)
+  }
+
   const removeYarn = (id) => setYarns(yarns.filter((y) => y.id !== id))
 
   const addHook = (e) => {
@@ -47,7 +65,15 @@ export default function Stash({ yarns, setYarns }) {
           Add what you own. Saved privately in this browser — no account, no upload.
         </p>
 
-        <form onSubmit={addYarn} className="card mb-5 flex flex-col gap-4 p-5">
+        <form onSubmit={saveYarn} className="card mb-5 flex flex-col gap-4 p-5">
+          {editingId && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-berry-ink">Editing yarn</span>
+              <button type="button" className="btn text-xs" onClick={cancelEdit}>
+                Cancel
+              </button>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Labeled label="Name *">
               <input
@@ -86,6 +112,17 @@ export default function Stash({ yarns, setYarns }) {
                 onChange={(e) => setField('color', e.target.value)}
               />
             </Labeled>
+            <Labeled label="Number of balls">
+              <input
+                className="field"
+                type="number"
+                min="1"
+                step="0.5"
+                placeholder="e.g. 3"
+                value={draft.balls}
+                onChange={(e) => setField('balls', e.target.value)}
+              />
+            </Labeled>
             <Labeled label="Length per ball (m)">
               <input
                 className="field"
@@ -119,7 +156,7 @@ export default function Stash({ yarns, setYarns }) {
           </div>
           <div>
             <button type="submit" className="btn btn-primary" disabled={!draft.name.trim()}>
-              Add yarn
+              {editingId ? 'Save changes' : 'Add yarn'}
             </button>
           </div>
         </form>
@@ -130,13 +167,18 @@ export default function Stash({ yarns, setYarns }) {
           <div className="grid gap-3 sm:grid-cols-2">
             {yarns.map((y) => {
               const w = weightById(y.weight)
+              const totalM = y.balls && y.lengthM ? Number(y.balls) * Number(y.lengthM) : null
               return (
-                <div key={y.id} className="card flex items-start justify-between gap-3 p-4">
-                  <div>
+                <div key={y.id} className={[
+                  'card flex items-start justify-between gap-3 p-4 transition-colors',
+                  editingId === y.id ? 'ring-2 ring-berry' : '',
+                ].join(' ')}>
+                  <div className="min-w-0 flex-1">
                     <div className="font-display text-lg font-bold leading-tight">{y.name}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {w && <span className="chip">{w.label}</span>}
                       {y.gaugePer10cm && <span className="chip">{y.gaugePer10cm} sts/10cm</span>}
+                      {y.balls && <span className="chip">{y.balls} ball{Number(y.balls) !== 1 ? 's' : ''}</span>}
                     </div>
                     <div className="mt-2 text-sm text-ink-soft">
                       {[y.fiber, y.color].filter(Boolean).join(' · ') || '—'}
@@ -147,13 +189,19 @@ export default function Stash({ yarns, setYarns }) {
                             .filter(Boolean)
                             .join(' / ')}{' '}
                           per ball
+                          {totalM && <span className="text-ink"> · {totalM} m total</span>}
                         </>
                       )}
                     </div>
                   </div>
-                  <button className="btn btn-danger" onClick={() => removeYarn(y.id)}>
-                    Remove
-                  </button>
+                  <div className="flex flex-col gap-1.5">
+                    <button className="btn text-xs" onClick={() => startEdit(y)}>
+                      Edit
+                    </button>
+                    <button className="btn btn-danger text-xs" onClick={() => removeYarn(y.id)}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
               )
             })}

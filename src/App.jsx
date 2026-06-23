@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocalStorage } from './lib/useLocalStorage.js'
 import Converter from './components/Converter.jsx'
 import Stash from './components/Stash.jsx'
+import Suggester from './components/Suggester.jsx'
 
 export default function App() {
   const [tab, setTab] = useState('convert')
@@ -22,7 +23,15 @@ export default function App() {
               aria-selected={tab === 'convert'}
               onClick={() => setTab('convert')}
             >
-              Convert a pattern
+              Convert
+            </button>
+            <button
+              className="tab"
+              role="tab"
+              aria-selected={tab === 'suggest'}
+              onClick={() => setTab('suggest')}
+            >
+              Suggest
             </button>
             <button
               className="tab"
@@ -37,11 +46,9 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-3xl px-5 py-6">
-        {tab === 'convert' ? (
-          <Converter yarns={yarns} onGoToStash={() => setTab('stash')} />
-        ) : (
-          <Stash yarns={yarns} setYarns={setYarns} />
-        )}
+        {tab === 'convert' && <Converter yarns={yarns} onGoToStash={() => setTab('stash')} />}
+        {tab === 'suggest' && <Suggester yarns={yarns} onGoToStash={() => setTab('stash')} />}
+        {tab === 'stash' && <Stash yarns={yarns} setYarns={setYarns} />}
       </main>
 
       <footer className="mx-auto max-w-3xl px-5 py-10 text-center text-[13px] text-ink-soft">
